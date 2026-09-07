@@ -1,0 +1,6 @@
+{
+  "name": "Al-qalam Academy Manager",
+  "description": "School Fees and Inventory Management System for Al-qalam Science Academy, Gusau.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
