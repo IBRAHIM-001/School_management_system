@@ -15,17 +15,13 @@ import {
   SchoolSection
 } from './types';
 import {
-  initialClasses,
-  initialAcademicYears,
-  initialTerms,
-  initialStudents,
-  initialCategories,
-  initialProducts,
-  initialBillings,
-  initialBillingItems,
-  initialAllocations,
-  initialLogs
-} from './data/initialData';
+  checkSQLiteHealth,
+  loadFromSQLite,
+  saveToSQLite,
+  purgeSQLiteServer,
+  downloadSQLiteDatabase,
+  SQLiteStatus
+} from './utils/sqliteClient';
 import AdminPanel from './components/AdminPanel';
 import CashierPanel from './components/CashierPanel';
 import InventoryPanel from './components/InventoryPanel';
@@ -54,7 +50,11 @@ import {
   Menu,
   Trash2,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  HardDrive,
+  Download,
+  RefreshCw,
+  Monitor
 } from 'lucide-react';
 
 const defaultAccounts: UserAccount[] = [
@@ -111,55 +111,55 @@ export default function App() {
     return saved === 'true';
   });
 
-  // 1. Core database engine local states
+  // 1. Core database engine local states (backed by SQLite and cached locally)
   const [classes, setClasses] = useState<SchoolClass[]>(() => {
     const saved = localStorage.getItem('alqalam_classes');
-    return saved ? JSON.parse(saved) : initialClasses;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [years, setYears] = useState<AcademicYear[]>(() => {
     const saved = localStorage.getItem('alqalam_years');
-    return saved ? JSON.parse(saved) : initialAcademicYears;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [terms, setTerms] = useState<Term[]>(() => {
     const saved = localStorage.getItem('alqalam_terms');
-    return saved ? JSON.parse(saved) : initialTerms;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [students, setStudents] = useState<Student[]>(() => {
     const saved = localStorage.getItem('alqalam_students');
-    return saved ? JSON.parse(saved) : initialStudents;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [categories, setCategories] = useState<ProductCategory[]>(() => {
     const saved = localStorage.getItem('alqalam_categories');
-    return saved ? JSON.parse(saved) : initialCategories;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem('alqalam_products');
-    return saved ? JSON.parse(saved) : initialProducts;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [billings, setBillings] = useState<Billing[]>(() => {
     const saved = localStorage.getItem('alqalam_billings');
-    return saved ? JSON.parse(saved) : initialBillings;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [breakdowns, setBreakdowns] = useState<BillingBreakdownItem[]>(() => {
     const saved = localStorage.getItem('alqalam_breakdowns');
-    return saved ? JSON.parse(saved) : initialBillingItems;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [allocations, setAllocations] = useState<StockAllocation[]>(() => {
     const saved = localStorage.getItem('alqalam_allocations');
-    return saved ? JSON.parse(saved) : initialAllocations;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [logs, setLogs] = useState<AuditLog[]>(() => {
     const saved = localStorage.getItem('alqalam_logs');
-    return saved ? JSON.parse(saved) : initialLogs;
+    return saved ? JSON.parse(saved) : [];
   });
 
   // Active state configuration
@@ -169,9 +169,9 @@ export default function App() {
 
     try {
       const savedYearsStr = localStorage.getItem('alqalam_years');
-      const loadedYears = savedYearsStr ? JSON.parse(savedYearsStr) : initialAcademicYears;
+      const loadedYears = savedYearsStr ? JSON.parse(savedYearsStr) : [];
       const savedTermsStr = localStorage.getItem('alqalam_terms');
-      const loadedTerms = savedTermsStr ? JSON.parse(savedTermsStr) : initialTerms;
+      const loadedTerms = savedTermsStr ? JSON.parse(savedTermsStr) : [];
 
       const activeYr = loadedYears.find((y: any) => y.status === 'Active') || loadedYears[loadedYears.length - 1];
       if (activeYr) {
@@ -190,6 +190,13 @@ export default function App() {
     return 0; // Default when no term exists
   });
   const [activeWorkstation, setActiveWorkstation] = useState<'Admin' | 'Cashier' | 'Inventory' | 'Logs' | 'Reports'>('Admin');
+
+  // SQLite Engine and Electron Desktop State
+  const [sqliteStatus, setSqliteStatus] = useState<SQLiteStatus>({
+    connected: false,
+    engine: 'SQLite 3'
+  });
+  const [sqliteSyncing, setSqliteSyncing] = useState<boolean>(false);
 
   // System Settings state
   const [showSettings, setShowSettings] = useState(false);
@@ -221,6 +228,108 @@ export default function App() {
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [restoreSuccess, setRestoreSuccess] = useState<boolean>(false);
   const [showPurgeConfirm, setShowPurgeConfirm] = useState<boolean>(false);
+
+  // Load from SQLite on startup
+  useEffect(() => {
+    let isMounted = true;
+    async function initSQLite() {
+      try {
+        const health = await checkSQLiteHealth();
+        if (isMounted) setSqliteStatus(health);
+
+        const sqliteData = await loadFromSQLite();
+        if (sqliteData && isMounted) {
+          const hasDbData =
+            (sqliteData.classes && sqliteData.classes.length > 0) ||
+            (sqliteData.years && sqliteData.years.length > 0) ||
+            (sqliteData.students && sqliteData.students.length > 0) ||
+            (sqliteData.products && sqliteData.products.length > 0) ||
+            (sqliteData.billings && sqliteData.billings.length > 0);
+
+          if (hasDbData) {
+            if (sqliteData.classes) setClasses(sqliteData.classes);
+            if (sqliteData.years) setYears(sqliteData.years);
+            if (sqliteData.terms) setTerms(sqliteData.terms);
+            if (sqliteData.students) setStudents(sqliteData.students);
+            if (sqliteData.categories) setCategories(sqliteData.categories);
+            if (sqliteData.products) setProducts(sqliteData.products);
+            if (sqliteData.billings) setBillings(sqliteData.billings);
+            if (sqliteData.breakdowns) setBreakdowns(sqliteData.breakdowns);
+            if (sqliteData.allocations) setAllocations(sqliteData.allocations);
+            if (sqliteData.logs) setLogs(sqliteData.logs);
+            if (sqliteData.userAccounts?.length) setUserAccounts(sqliteData.userAccounts);
+            if (sqliteData.activeTermId) setActiveTermId(sqliteData.activeTermId);
+          }
+        }
+      } catch (err) {
+        console.warn('SQLite init warning:', err);
+      }
+    }
+    initSQLite();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Debounced auto-sync of system data to SQLite database
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        setSqliteSyncing(true);
+        await saveToSQLite({
+          classes,
+          years,
+          terms,
+          students,
+          categories,
+          products,
+          billings,
+          breakdowns,
+          allocations,
+          logs,
+          userAccounts,
+          activeTermId,
+          settings: {
+            school_name: settingsSchoolName,
+            lan_ip: settingsLanIP,
+            currency: settingsCurrency,
+            tuition_pre_primary: settingsDefaultTuitionPrePrimary,
+            tuition_primary: settingsDefaultTuitionPrimary,
+            tuition_jss: settingsDefaultTuitionJSS,
+            tuition_sss: settingsDefaultTuitionSSS
+          }
+        });
+        const updatedHealth = await checkSQLiteHealth();
+        setSqliteStatus(updatedHealth);
+      } catch (err) {
+        console.warn('Auto-sync to SQLite warning:', err);
+      } finally {
+        setSqliteSyncing(false);
+      }
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [
+    classes,
+    years,
+    terms,
+    students,
+    categories,
+    products,
+    billings,
+    breakdowns,
+    allocations,
+    logs,
+    userAccounts,
+    activeTermId,
+    settingsSchoolName,
+    settingsLanIP,
+    settingsCurrency,
+    settingsDefaultTuitionPrePrimary,
+    settingsDefaultTuitionPrimary,
+    settingsDefaultTuitionJSS,
+    settingsDefaultTuitionSSS
+  ]);
 
   // Persist states across browser reloads
   useEffect(() => {
@@ -506,7 +615,7 @@ export default function App() {
   };
 
   // Manual Purge All Data & Clean Database
-  const executePurgeAllData = () => {
+  const executePurgeAllData = async () => {
     setClasses([]);
     setYears([]);
     setTerms([]);
@@ -539,10 +648,19 @@ export default function App() {
     localStorage.setItem('alqalam_logs', JSON.stringify(freshLog));
     localStorage.setItem('alqalam_db_cleaned_v5', 'true');
 
+    // Reset SQLite persistence engine on disk
+    try {
+      await purgeSQLiteServer();
+      const h = await checkSQLiteHealth();
+      setSqliteStatus(h);
+    } catch (e) {
+      console.warn("Purge SQLite error:", e);
+    }
+
     setShowPurgeConfirm(false);
     setShowSettings(false);
     setSystemToast({
-      message: 'Database successfully cleared! All classes, sessions, and records dropped.',
+      message: 'SQLite database & local records cleared! Like-new database initialized.',
       type: 'success'
     });
   };
@@ -1531,9 +1649,9 @@ export default function App() {
             <span className="h-4 w-[1px] bg-slate-200"></span>
             <span className="text-slate-400 text-xs font-medium">Current Term: <span className="text-slate-900 font-bold">{activeTerm ? activeTerm.term_name : 'None Configured'}</span></span>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
             <div className="px-3 py-1 bg-amber-50 text-amber-700 text-[10px] font-bold rounded-full border border-amber-200 uppercase tracking-wide font-mono">
-              LAN-Server Active: {settingsLanIP}
+              LAN-Server: {settingsLanIP}
             </div>
             <div className="flex space-x-1.5">
               <div className="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse"></div>
@@ -1854,7 +1972,7 @@ export default function App() {
               <div className="border-t border-slate-100 pt-2.5 space-y-2">
                 <div>
                   <h4 className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500">Database Administration</h4>
-                  <p className="text-[9px] text-slate-400 mt-0.5">Restore database state from an Al-Qalam SQL Backup file.</p>
+                  <p className="text-[9px] text-slate-400 mt-0.5">Restore database state from an SQL Backup file.</p>
                 </div>
 
                 <div className="relative border border-dashed border-slate-300 hover:border-teal-500 rounded-lg p-2.5 bg-slate-50 hover:bg-slate-100/50 transition flex flex-col items-center justify-center text-center cursor-pointer">
@@ -1865,7 +1983,7 @@ export default function App() {
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                   <Database className="h-4 w-4 text-teal-600 mb-0.5" />
-                  <span className="text-[10px] font-bold text-slate-700">Upload Al-Qalam Backup (.sql)</span>
+                  <span className="text-[10px] font-bold text-slate-700">Upload Backup</span>
                   <span className="text-[8px] text-slate-400 font-mono">Click or drag & drop</span>
                 </div>
 

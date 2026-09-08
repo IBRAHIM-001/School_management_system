@@ -115,13 +115,15 @@ CREATE TABLE IF NOT EXISTS students (
   admission_no VARCHAR(100) UNIQUE NOT NULL,
   first_name VARCHAR(100) NOT NULL,
   last_name VARCHAR(100) NOT NULL,
+  gender VARCHAR(20),
+  date_of_birth VARCHAR(50),
   current_class_id INT REFERENCES classes(class_id),
   parent_phone VARCHAR(50),
   is_active BOOLEAN DEFAULT TRUE
 );\n\n`;
 
   data.students.forEach(s => {
-    sql += `INSERT INTO students (student_id, admission_no, first_name, last_name, current_class_id, parent_phone, is_active) VALUES (${s.student_id}, ${escapeVal(s.admission_no)}, ${escapeVal(s.first_name)}, ${escapeVal(s.last_name)}, ${s.current_class_id}, ${escapeVal(s.parent_phone)}, ${s.is_active !== false ? 'TRUE' : 'FALSE'}) ON CONFLICT (student_id) DO UPDATE SET admission_no = EXCLUDED.admission_no, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, current_class_id = EXCLUDED.current_class_id, parent_phone = EXCLUDED.parent_phone, is_active = EXCLUDED.is_active;\n`;
+    sql += `INSERT INTO students (student_id, admission_no, first_name, last_name, gender, date_of_birth, current_class_id, parent_phone, is_active) VALUES (${s.student_id}, ${escapeVal(s.admission_no)}, ${escapeVal(s.first_name)}, ${escapeVal(s.last_name)}, ${escapeVal(s.gender || null)}, ${escapeVal(s.date_of_birth || null)}, ${s.current_class_id}, ${escapeVal(s.parent_phone)}, ${s.is_active !== false ? 'TRUE' : 'FALSE'}) ON CONFLICT (student_id) DO UPDATE SET admission_no = EXCLUDED.admission_no, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, gender = EXCLUDED.gender, date_of_birth = EXCLUDED.date_of_birth, current_class_id = EXCLUDED.current_class_id, parent_phone = EXCLUDED.parent_phone, is_active = EXCLUDED.is_active;\n`;
   });
   sql += `\n`;
 
@@ -244,11 +246,13 @@ export function parseSqlDump(sql: string): {
   userAccounts: UserAccount[];
   activeTermId: number;
 } {
-  const lines = sql.split('\n');
+  const normalizedSql = sql.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalizedSql.split('\n');
   let jsonString = '';
   let inPayload = false;
 
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
     if (line.includes('[AL-QALAM-BACKUP-PAYLOAD-START]')) {
       inPayload = true;
       continue;
@@ -259,12 +263,20 @@ export function parseSqlDump(sql: string): {
     }
     if (inPayload && line.startsWith('-- DB_CHUNK:')) {
       // Remove SQL comment indicators and append
-      jsonString += line.substring(12).trimEnd();
+      jsonString += line.substring(12).trim();
+    }
+  }
+
+  // Fallback: if user uploaded raw JSON or embedded JSON without markers
+  if (!jsonString) {
+    const trimmed = normalizedSql.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      jsonString = trimmed;
     }
   }
 
   if (!jsonString) {
-    throw new Error('No valid Al-Qalam backup data payload found in SQL comments.');
+    throw new Error('No valid backup data payload found in the uploaded SQL file.');
   }
 
   try {
@@ -274,13 +286,30 @@ export function parseSqlDump(sql: string): {
     if (
       !Array.isArray(parsed.classes) || 
       !Array.isArray(parsed.students) || 
-      !Array.isArray(parsed.billings) ||
-      !Array.isArray(parsed.userAccounts)
+      !Array.isArray(parsed.billings)
     ) {
-      throw new Error('Backup payload structure lacks critical tables.');
+      throw new Error('Backup payload structure lacks critical tables (classes, students, billings).');
     }
-    
-    return parsed;
+
+    return {
+      classes: parsed.classes || [],
+      years: parsed.years || [],
+      terms: parsed.terms || [],
+      students: (parsed.students || []).map((s: any) => ({
+        ...s,
+        gender: s.gender || 'Male',
+        date_of_birth: s.date_of_birth || '',
+        is_active: s.is_active !== false
+      })),
+      categories: parsed.categories || [],
+      products: parsed.products || [],
+      billings: parsed.billings || [],
+      breakdowns: parsed.breakdowns || [],
+      allocations: parsed.allocations || [],
+      logs: parsed.logs || [],
+      userAccounts: parsed.userAccounts || [],
+      activeTermId: typeof parsed.activeTermId === 'number' ? parsed.activeTermId : 0
+    };
   } catch (e: any) {
     throw new Error('Failed to parse SQL backup dataset content: ' + e.message);
   }

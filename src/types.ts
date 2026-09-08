@@ -23,6 +23,8 @@ export interface Student {
   admission_no: string;
   first_name: string;
   last_name: string;
+  gender?: string;
+  date_of_birth?: string;
   current_class_id: number;
   parent_phone: string;
   is_active?: boolean;

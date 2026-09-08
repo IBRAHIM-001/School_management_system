@@ -97,6 +97,8 @@ export default function AdminPanel({
   // Local state for forms
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [gender, setGender] = useState<'Male' | 'Female'>('Male');
+  const [dateOfBirth, setDateOfBirth] = useState('');
   const [classId, setClassId] = useState(classes[0]?.class_id || 0);
   const [parentPhone, setParentPhone] = useState('');
   const [admNo, setAdmNo] = useState('');
@@ -135,6 +137,8 @@ export default function AdminPanel({
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [editFirstName, setEditFirstName] = useState('');
   const [editLastName, setEditLastName] = useState('');
+  const [editGender, setEditGender] = useState<'Male' | 'Female'>('Male');
+  const [editDateOfBirth, setEditDateOfBirth] = useState('');
   const [editAdmNo, setEditAdmNo] = useState('');
   const [editClassId, setEditClassId] = useState<number>(classes[0]?.class_id || 1);
   const [editParentPhone, setEditParentPhone] = useState('');
@@ -181,6 +185,8 @@ export default function AdminPanel({
     setEditingStudent(student);
     setEditFirstName(student.first_name);
     setEditLastName(student.last_name);
+    setEditGender((student.gender as 'Male' | 'Female') || 'Male');
+    setEditDateOfBirth(student.date_of_birth || '');
     setEditAdmNo(student.admission_no);
     setEditClassId(student.current_class_id);
     setEditParentPhone(student.parent_phone || '');
@@ -213,6 +219,8 @@ export default function AdminPanel({
       ...editingStudent,
       first_name: editFirstName.trim(),
       last_name: editLastName.trim(),
+      gender: editGender,
+      date_of_birth: editDateOfBirth.trim(),
       admission_no: editAdmNo.trim(),
       current_class_id: Number(editClassId),
       parent_phone: editParentPhone.trim(),
@@ -320,31 +328,32 @@ export default function AdminPanel({
   const activeTerm = terms.find((t) => t.term_id === activeTermId);
   const activeYear = activeTerm ? years.find((y) => y.year_id === activeTerm.year_id) : null;
 
-  // Auto-generate admission number if empty or reset
-  const yearPart = activeYear ? activeYear.year_label.split('/')[0] : '2026';
+  // Auto-generate admission number if empty or reset (format: ASA/current_year/0001)
+  const currentCalendarYear = new Date().getFullYear().toString();
+  const currentYear = activeYear ? activeYear.year_label.split('/')[0].trim() : currentCalendarYear;
 
   React.useEffect(() => {
     if (!admNo) {
-      const prefix = `ASA/${yearPart}/`;
-      const matchingStudents = students.filter(s => s.admission_no.toLowerCase().startsWith(prefix.toLowerCase()));
+      const prefix = `ASA/${currentYear}/`;
+      const matchingStudents = students.filter(s =>
+        s.admission_no.toLowerCase().startsWith(prefix.toLowerCase())
+      );
       let maxSeq = 0;
       if (matchingStudents.length > 0) {
         matchingStudents.forEach(s => {
           const parts = s.admission_no.split('/');
-          if (parts.length === 3) {
-            const seq = parseInt(parts[2], 10);
+          if (parts.length >= 3) {
+            const seq = parseInt(parts[parts.length - 1], 10);
             if (!isNaN(seq) && seq > maxSeq) {
               maxSeq = seq;
             }
           }
         });
-      } else {
-        maxSeq = 100;
       }
-      const nextNo = `ASA/${yearPart}/${String(maxSeq + 1).padStart(4, '0')}`;
+      const nextNo = `ASA/${currentYear}/${String(maxSeq + 1).padStart(4, '0')}`;
       setAdmNo(nextNo);
     }
-  }, [students, activeYear, admNo, yearPart]);
+  }, [students, activeYear, admNo, currentYear]);
 
   const handleCreateYear = (e: React.FormEvent) => {
     e.preventDefault();
@@ -368,12 +377,16 @@ export default function AdminPanel({
       admission_no: admNo,
       first_name: firstName,
       last_name: lastName,
+      gender: gender,
+      date_of_birth: dateOfBirth,
       current_class_id: Number(classId),
       parent_phone: parentPhone
     });
 
     setFirstName('');
     setLastName('');
+    setGender('Male');
+    setDateOfBirth('');
     setParentPhone('');
     setAdmNo('');
     triggerNotice('Successfully registered student ' + firstName + ' ' + lastName);
@@ -544,7 +557,7 @@ export default function AdminPanel({
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="ASA/2026/0150"
+                    placeholder={`ASA/${currentYear}/0001`}
                     value={admNo}
                     onChange={(e) => setAdmNo(e.target.value)}
                     className="w-full text-xs border border-slate-200 rounded-lg p-2.5 pr-10 bg-slate-50 focus:bg-white focus:outline-teal-500 text-slate-700 font-semibold font-mono"
@@ -584,6 +597,29 @@ export default function AdminPanel({
                     onChange={(e) => setLastName(e.target.value)}
                     className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50 focus:bg-white focus:outline-teal-500 text-slate-800 font-medium"
                     required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1 font-mono">Gender</label>
+                  <select
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value as 'Male' | 'Female')}
+                    className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50 focus:bg-white focus:outline-teal-500 text-slate-800 font-semibold cursor-pointer"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1 font-mono">Date of Birth</label>
+                  <input
+                    type="date"
+                    value={dateOfBirth}
+                    onChange={(e) => setDateOfBirth(e.target.value)}
+                    className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50 focus:bg-white focus:outline-teal-500 text-slate-800 font-medium font-mono"
                   />
                 </div>
               </div>
@@ -1061,6 +1097,8 @@ export default function AdminPanel({
                   <tr className="bg-slate-50 text-slate-400 border-b border-slate-150 text-[10px] tracking-wider uppercase font-bold font-mono">
                     <th className="p-4">Admission No</th>
                     <th className="p-4">Full Name</th>
+                    <th className="p-4">Gender</th>
+                    <th className="p-4">Date of Birth</th>
                     <th className="p-4">Classroom</th>
                     <th className="p-4">Term Statement Status</th>
                     <th className="p-4">Parent Contact</th>
@@ -1070,7 +1108,7 @@ export default function AdminPanel({
                 <tbody className="divide-y divide-slate-100">
                   {filteredStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-400">
+                      <td colSpan={8} className="p-8 text-center text-slate-400">
                         <Users className="h-8 w-8 mx-auto mb-2 opacity-40 text-slate-400" />
                         <p className="font-semibold text-slate-600 text-xs">No students found</p>
                         <p className="text-[11px] text-slate-400 mt-1">
@@ -1148,6 +1186,16 @@ export default function AdminPanel({
                               </span>
                               <Pencil className="h-3 w-3 text-teal-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                             </button>
+                          </td>
+                          <td className="p-4 text-slate-700">
+                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                              student.gender === 'Female' ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'bg-sky-50 text-sky-700 border border-sky-200'
+                            }`}>
+                              {student.gender || 'Male'}
+                            </span>
+                          </td>
+                          <td className="p-4 text-slate-600 font-mono text-[11px]">
+                            {student.date_of_birth || '—'}
                           </td>
                           <td className="p-4 text-slate-600 font-medium">
                             {matchedClass ? matchedClass.class_name : 'N/A'}
@@ -1581,6 +1629,35 @@ export default function AdminPanel({
                     onChange={(e) => setEditLastName(e.target.value)}
                     className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50 focus:bg-white focus:outline-teal-500 font-medium text-slate-800"
                     required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1 font-mono">
+                    Gender
+                  </label>
+                  <select
+                    id="select-edit-student-gender"
+                    value={editGender}
+                    onChange={(e) => setEditGender(e.target.value as 'Male' | 'Female')}
+                    className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50 focus:bg-white focus:outline-teal-500 font-semibold text-slate-800 cursor-pointer"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1 font-mono">
+                    Date of Birth
+                  </label>
+                  <input
+                    id="input-edit-student-dob"
+                    type="date"
+                    value={editDateOfBirth}
+                    onChange={(e) => setEditDateOfBirth(e.target.value)}
+                    className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50 focus:bg-white focus:outline-teal-500 font-mono text-slate-800"
                   />
                 </div>
               </div>
